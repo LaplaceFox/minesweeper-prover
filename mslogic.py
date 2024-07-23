@@ -1,4 +1,68 @@
 from dataclasses import dataclass
+from itertools import product
+
+class Prop:
+    def try_rule(self,props,rule):
+        print("Applying %s" % rule.name)
+
+        new_props = []
+
+        arity = len(rule.types)
+
+        # Try to use prop in each slot in rule premise
+        for i in range(arity):
+
+            # If not applicable in this slot, try next
+            if not isinstance(self,rule.types[i]):
+                continue
+            
+            prop_domain = list(product(*[[p for p in props if isinstance(p, rule.types[j])] if i != j else [self] for j in range(arity)]))
+
+            """ print("prop_domain")
+            for p in prop_domain:
+                print(p)
+ """
+            for inputs in prop_domain:
+                print("Trying inputs", str(inputs))
+                results = rule.apply(*inputs)
+
+                print("Found:", str(results))
+
+                new_props += results
+
+        return new_props
+
+    def try_all_rules(self,props,rules):
+        new_props = []
+        for rule in rules:
+            new_props += self.try_rule(props,rule)
+            print()
+        return new_props
+
+
+@dataclass
+class Mine(Prop):
+    cell: int
+
+    def __init__(self,cell):
+        self.cell = cell
+
+@dataclass
+class Safe(Prop):
+    cell: int
+
+    def __init__(self,cell):
+        self.cell = cell
+
+@dataclass
+class Total(Prop):
+    bounds: "tuple[int,int]"
+    region: "set[int]"
+
+    def __init__(self,low,high,region):
+        self.bounds = (low,high)
+        self.region = region
+
 
 class Rule:
     #name: Rule name as string
@@ -17,29 +81,6 @@ class Rule:
     def apply(self,*args):
         self.typecheck(*args)
         return self.applyfn(*args)
-
-@dataclass
-class Mine:
-    cell: int
-
-    def __init__(self,cell):
-        self.cell = cell
-
-@dataclass
-class Safe:
-    cell: int
-
-    def __init__(self,cell):
-        self.cell = cell
-
-@dataclass
-class Total:
-    bounds: "tuple[int,int]"
-    region: "set[int]"
-
-    def __init__(self,low,high,region):
-        self.bounds = (low,high)
-        self.region = region
 
 ### RULES ###
 
@@ -78,11 +119,13 @@ def apply_intersection(*args):
             pass
         case _:
             raise ValueError
-        
-    if S != T: # conclusion would be redundant
-        return [Total(0, len(S & T), S & T)]
-    else:
+
+    if S <= T or S >= T: # conclusion would be redundant or handled by subset
+        return []        
+    elif len(S & T) == 0: # disjoint
         return []
+    else:
+        return [Total(0, len(S & T), S & T)]
     
 rule_intersection = Rule("Intersection", (Total,Total), apply_intersection)
 
@@ -162,6 +205,7 @@ def apply_remsafe(*args):
 
 rule_remsafe = Rule("RemSafe", (Total,Safe), apply_remsafe)
 
+usable_rules = [rule_subset, rule_intersection, rule_allmine, rule_allsafe, rule_remmine, rule_remsafe]
 
 # for testing
 v = Total(0,4,{1,2,3,4,5})
@@ -169,3 +213,15 @@ w = Total(0,0,{1,2,3,4,5,6})
 x = Total(1,2,{1,2,3,4,5})
 y = Total(5,6,{3,4,5,6,7,8})
 z = Total(4,4,{1,2,3,4})
+
+
+#Example puzzle:
+puzzle = \
+    [
+        Total(3,3,{1,2,3,6,7,8}),
+        Total(4,4,{2,3,4,7,8,9,12,13,14}),
+        Total(3,3,{5,6,7,10,11,12,15,16,17}),
+        Total(3,3,{10,11,12,15,16,17,20,21,22}),
+        Total(1,1,{15,16,17,20,21,22}),
+        Safe(2), Safe(8), Safe(11), Safe(16), Safe(21)
+    ]
