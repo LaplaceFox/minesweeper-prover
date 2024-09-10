@@ -1,11 +1,16 @@
 from dataclasses import dataclass
 from itertools import product
 
+# TODO: Use rem field of Update
+
 class Prop:
+    def __hash__(self):
+        return hash(str(self))
+
     def try_rule(self,props,rule):
         print("Applying %s" % rule.name)
 
-        new_props = []
+        new_props = Update([],[])
 
         arity = len(rule.types)
 
@@ -21,7 +26,8 @@ class Prop:
             """ print("prop_domain")
             for p in prop_domain:
                 print(p)
- """
+            """
+            
             for inputs in prop_domain:
                 print("Trying inputs", str(inputs))
                 results = rule.apply(*inputs)
@@ -33,7 +39,7 @@ class Prop:
         return new_props
 
     def try_all_rules(self,props,rules):
-        new_props = []
+        new_props = Update([],[])
         for rule in rules:
             new_props += self.try_rule(props,rule)
             print()
@@ -44,12 +50,16 @@ class Prop:
 class Mine(Prop):
     cell: int
 
+    __hash__ = Prop.__hash__
+
     def __init__(self,cell):
         self.cell = cell
 
 @dataclass
 class Safe(Prop):
     cell: int
+
+    __hash__ = Prop.__hash__
 
     def __init__(self,cell):
         self.cell = cell
@@ -59,15 +69,32 @@ class Total(Prop):
     bounds: "tuple[int,int]"
     region: "set[int]"
 
+    __hash__ = Prop.__hash__
+
     def __init__(self,low,high,region):
         self.bounds = (low,high)
         self.region = region
 
+@dataclass
+class Update:
+    add: "list[Prop]"
+    rem: "list[Prop]"
+
+    def __init__(self,add,rem):
+        self.add = add
+        self.rem = rem
+
+    # Combine without duplicates
+    def __add__(self,other):
+        new_add = list(set(self.add + other.add))
+        new_rem = list(set(self.rem + other.rem))
+
+        return Update(new_add,new_rem)
 
 class Rule:
     #name: Rule name as string
     #type: Tuple of types in rule premise
-    #applyfn: Takes props of correct types, returns (possibly empty) list of props
+    #applyfn: Takes props of correct types, returns Update object
     
     def __init__(self,name,types,applyfn):
         self.name = name
@@ -78,9 +105,12 @@ class Rule:
         assert len(args) == len(self.types), "Wrong number of arguments for %s" % (self.name)
         assert False not in [isinstance(args[i],self.types[i]) for i in range(len(self.types))], "Argument of wrong type"
 
-    def apply(self,*args):
+    def apply(self,*args) -> Update:
         self.typecheck(*args)
         return self.applyfn(*args)
+
+class LogicState:
+    pass
 
 ### RULES ###
 
@@ -99,9 +129,9 @@ def apply_subset(*args):
             raise ValueError
         
     if S < T:
-        return [Total(c-b, d-a, T-S)]
+        return Update([Total(c-b, d-a, T-S)],[])
     else:
-        return []
+        return Update([],[])
 
 rule_subset = Rule("Subset", (Total,Total), apply_subset)
 
@@ -121,11 +151,11 @@ def apply_intersection(*args):
             raise ValueError
 
     if S <= T or S >= T: # conclusion would be redundant or handled by subset
-        return []        
+        return Update([],[])        
     elif len(S & T) == 0: # disjoint
-        return []
+        return Update([],[])
     else:
-        return [Total(0, len(S & T), S & T)]
+        return Update([Total(0, len(S & T), S & T)],[])
     
 rule_intersection = Rule("Intersection", (Total,Total), apply_intersection)
 
@@ -139,9 +169,9 @@ def apply_allmine(*args):
             raise ValueError
 
     if a == b == len(S):
-        return [Mine(x) for x in S]
+        return Update([Mine(x) for x in S],[])
     else:
-        return []
+        return Update([],[])
 
 rule_allmine = Rule("AllMine", tuple([Total]), apply_allmine)
 
@@ -155,9 +185,9 @@ def apply_allsafe(*args):
             raise ValueError
 
     if a == b == 0:
-        return [Safe(x) for x in S]
+        return Update([Safe(x) for x in S],[])
     else:
-        return []
+        return Update([],[])
 
 rule_allsafe = Rule("AllSafe", tuple([Total]), apply_allsafe)
 
@@ -177,9 +207,9 @@ def apply_remmine(*args):
             raise ValueError
     
     if x in S:
-        return [Total(max(0,a-1), b-1, S-{x})]
+        return Update([Total(max(0,a-1), b-1, S-{x})],[])
     else:
-        return []
+        return Update([],[])
 
 rule_remmine = Rule("RemMine", (Total,Mine), apply_remmine)
 
@@ -199,9 +229,9 @@ def apply_remsafe(*args):
             raise ValueError
     
     if x in S:
-        return [Total(a, min(b,len(S)-1), S-{x})]
+        return Update([Total(a, min(b,len(S)-1), S-{x})],[])
     else:
-        return []
+        return Update([],[])
 
 rule_remsafe = Rule("RemSafe", (Total,Safe), apply_remsafe)
 
