@@ -1,3 +1,4 @@
+from copy import deepcopy as copy
 from dataclasses import dataclass
 from itertools import product
 
@@ -32,7 +33,8 @@ class Prop:
                 print("Trying inputs", str(inputs))
                 results = rule.apply(*inputs)
 
-                print("Found:", str(results))
+                if results.add or results.rem:
+                    print("Found:", str(results))
 
                 new_props += results
 
@@ -109,8 +111,24 @@ class Rule:
         self.typecheck(*args)
         return self.applyfn(*args)
 
+def sort_priority(prop):
+    match prop:
+        case Mine(_):
+            return (1,str(prop))
+        case Safe(_):
+            return (2,str(prop))
+        case Total(_):
+            return (3,str(prop))
+        case _:
+            raise ValueError
+
 class LogicState:
-    pass
+    # Puzzle is a list of premises
+    def __init__(self,puzzle):
+        self.proven = puzzle
+        self.hypotheses = []
+
+    # Sort propositions before choosing one to try applying
 
 ### RULES ###
 
@@ -169,7 +187,7 @@ def apply_allmine(*args):
             raise ValueError
 
     if a == b == len(S):
-        return Update([Mine(x) for x in S],[])
+        return Update([Mine(x) for x in S],[args[0]])
     else:
         return Update([],[])
 
@@ -185,7 +203,7 @@ def apply_allsafe(*args):
             raise ValueError
 
     if a == b == 0:
-        return Update([Safe(x) for x in S],[])
+        return Update([Safe(x) for x in S],[args[0]])
     else:
         return Update([],[])
 
@@ -207,7 +225,7 @@ def apply_remmine(*args):
             raise ValueError
     
     if x in S:
-        return Update([Total(max(0,a-1), b-1, S-{x})],[])
+        return Update([Total(max(0,a-1), b-1, S-{x})],[args[0]])
     else:
         return Update([],[])
 
@@ -229,7 +247,7 @@ def apply_remsafe(*args):
             raise ValueError
     
     if x in S:
-        return Update([Total(a, min(b,len(S)-1), S-{x})],[])
+        return Update([Total(a, min(b,len(S)-1), S-{x})],[args[0]])
     else:
         return Update([],[])
 
